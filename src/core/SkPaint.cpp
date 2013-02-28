@@ -106,7 +106,12 @@ extern "C" {
 }
 
 SkPaint::SkPaint(const SkPaint& src) {
-    memcpy(this, &src, sizeof(src));
+    //Note: need to update this when SkPaint struture/size is changed!
+    if(sizeof(src) == 76){
+        memcpy_76((int*)this, (const int*)&src);
+    } else {
+        memcpy((int*)this, (const int*)&src, sizeof(src));
+    }
 
     SkSafeRef(fTypeface);
     SkSafeRef(fPathEffect);

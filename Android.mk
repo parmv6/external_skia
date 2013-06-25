@@ -51,6 +51,10 @@ ifeq ($(ARCH_ARM_HAVE_NEON),true)
 	LOCAL_CFLAGS += -D__ARM_HAVE_NEON
 endif
 
+# Enable Neon assembler optimized version of S32A_Opaque_BlitRow32 and
+# S32A_Blend_Blitrow32. Overrides the intrinsic blitter below.
+LOCAL_CFLAGS += -DENABLE_OPTIMIZED_S32A_BLITTERS
+
 # special checks for alpha == 0 and alpha == 255 in S32A_Opaque_BlitRow32
 # procedures (C and assembly) seriously improve skia performance
 LOCAL_CFLAGS += -DTEST_SRC_ALPHA
@@ -255,10 +259,17 @@ LOCAL_SRC_FILES:= \
 	src/utils/SkSfntUtils.cpp \
 	src/utils/SkUnitMappers.cpp
 
+ifeq ($(BOARD_USES_SKTEXTBOX),true)
+LOCAL_SRC_FILES += \
+	src/views/SkTextBox.cpp
+endif
+
 ifeq ($(TARGET_ARCH),arm)
 
 ifeq ($(ARCH_ARM_HAVE_NEON),true)
 LOCAL_SRC_FILES += \
+	src/opts/S32A_Opaque_BlitRow32_neon.S \
+	src/opts/S32A_Blend_BlitRow32_neon.S \
 	src/opts/memset16_neon.S \
 	src/opts/memset32_neon.S
 
@@ -282,6 +293,34 @@ endif
 # these are for emoji support, needed by webkit
 LOCAL_SRC_FILES += \
 	emoji/EmojiFont.cpp
+
+ifeq ($(ARCH_ARM_HAVE_NEON),true)
+	LOCAL_SRC_FILES += \
+		src/opts/S16_D32_arm.S
+endif
+
+# including the optimized assembly code for the src-overing operation
+ifeq ($(TARGET_ARCH),arm)
+	LOCAL_CFLAGS += -D__CPU_ARCH_ARM
+	LOCAL_SRC_FILES += \
+		src/opts/S32A_D565_Opaque_arm.S \
+		src/opts/S32A_Opaque_BlitRow32_arm.S \
+		src/opts/S32A_Blend_BlitRow32_arm.S
+endif
+
+ifeq "$(findstring armv6,$(TARGET_ARCH_VARIANT))" "armv6"
+	ARCH_ARMV6_ARMV7 := true
+endif
+
+ifeq "$(findstring armv7,$(TARGET_ARCH_VARIANT))" "armv7"
+	ARCH_ARMV6_ARMV7 := true
+endif
+
+ifeq ($(ARCH_ARMV6_ARMV7),true)
+	LOCAL_SRC_FILES += \
+		src/opts/S32_Opaque_D32_nofilter_DX_gether_arm.S
+endif
+
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
@@ -319,6 +358,11 @@ LOCAL_C_INCLUDES += \
 ifeq ($(NO_FALLBACK_FONT),true)
 	LOCAL_CFLAGS += -DNO_FALLBACK_FONT
 endif
+
+# FIXME this should really be limited to files that need it, such as
+# src/utils/SkCamera.cpp -- pretty bad violations going on in there,
+# but most of the rest of skia is good
+LOCAL_CFLAGS += -fno-strict-aliasing
 
 LOCAL_LDLIBS += -lpthread
 
@@ -417,7 +461,7 @@ LOCAL_C_INCLUDES += \
   $(LOCAL_PATH)/src/core \
   $(LOCAL_PATH)/src/gpu \
   $(LOCAL_PATH)/third_party/glu \
-  frameworks/base/opengl/include
+  frameworks/native/opengl/include
 
 LOCAL_LDLIBS += -lpthread
 
@@ -455,7 +499,7 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES += \
   $(LOCAL_PATH)/third_party/glu \
   $(LOCAL_PATH)/third_party/glu/libtess \
-  frameworks/base/opengl/include
+  frameworks/native/opengl/include
 
 LOCAL_LDLIBS += -lpthread
 
